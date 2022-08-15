@@ -21,6 +21,7 @@ import argparse
 from concurrent.futures import thread
 import json
 import logging
+import multiprocessing
 import os
 import sys
 from tarfile import LENGTH_LINK
@@ -46,6 +47,9 @@ class AirDropCli:
     currently_requesting = False
 
     number_accepted_requests = 0
+
+    # duration until a request times out and new request to new devices will be send
+    timeout_duration = 7
 
     def __init__(self, args):
         parser = argparse.ArgumentParser()
@@ -135,7 +139,7 @@ class AirDropCli:
 
     # start a new airdrop server and search for devices
     def find(self):
-        logger.info("Restarted AirDrop server and searching for results...")
+        logger.info("(Re-)Started AirDrop server and searching for results...")
         self.browser = AirDropBrowser(self.config)
         self.browser.start(callback_add=self._found_receiver)
 
@@ -144,14 +148,12 @@ class AirDropCli:
     # 2. no other discovery is running currently
     def _found_receiver(self, info):
         # thread safe checking
-        self.lock.acquire()
         if self._device_already_requested(info):
             logger.info("Skipped discovering device because device has already been requested.")
             return
         if self.currently_requesting:
             logger.info("Skipped discovering device because another request is currently running.")
             return
-        self.lock.release()
 
         self.currently_requesting = True
         self.requested_receivers.append(info.key)
@@ -177,7 +179,7 @@ class AirDropCli:
         hostname = info.server
         port = int(info.port)
         logger.debug(f"AirDrop service found: {hostname}, {address}:{port}, ID {id}")
-        client = AirDropClient(self.config, (address, int(port)))
+        client = AirDropClient(self.config, (address, int(port)), timeout=self.timeout_duration)
         try:
             flags = int(info.properties[b"flags"])
         except KeyError:
@@ -222,13 +224,21 @@ class AirDropCli:
         # Restart the server by searching for new devices
         self.find()
 
-
     def send(self, receiver):
         if receiver is None:
             return
-        self.client = AirDropClient(self.config, (receiver["address"], receiver["port"]))
+        self.client = AirDropClient(self.config, (receiver["address"], receiver["port"]), timeout=self.timeout_duration)
         logger.info("Asking receiver to accept ...")
-        if not self.client.send_ask(self.file, is_url=self.is_url):
+
+        # Ensure timeout
+        try:
+            ask_res = self.client.send_ask(self.file, is_url=self.is_url)
+        # TODO: catch a non-generic exception
+        except Exception:
+            logger.debug("Connection request timed out.")
+            return
+        
+        if not ask_res:
             logger.warning("Receiver declined")
             return
         logger.info("Receiver accepted")

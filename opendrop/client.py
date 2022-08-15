@@ -75,7 +75,6 @@ class AirDropBrowser:
 
     def add_service(self, zeroconf, service_type, name):
         info = zeroconf.get_service_info(service_type, name)
-        # TODO: check here if user has already been requested?
         logger.debug(f"Add service {name}")
 
         if self.callback_add is not None:
@@ -93,11 +92,12 @@ class AirDropBrowser:
 
 
 class AirDropClient:
-    def __init__(self, config, receiver):
+    def __init__(self, config, receiver, timeout):
         self.config = config
         self.receiver_host = receiver[0]
         self.receiver_port = receiver[1]
         self.http_conn = None
+        self.timeout = timeout
 
     def send_POST(self, url, body, headers=None):
         logger.debug(f"Send {url} request")
@@ -117,9 +117,15 @@ class AirDropClient:
                 self.receiver_port,
                 interface_name=self.config.interface,
                 context=self.config.get_ssl_context(),
+                timeout=self.timeout
             )
         self.http_conn.request("POST", url, body=body, headers=_headers)
-        http_resp = self.http_conn.getresponse()
+        try:
+            http_resp = self.http_conn.getresponse()
+        # TODO: catch a non-generic exception
+        except Exception:
+            logger.info("A request has timed out. Requests won't be send to the same device.")
+            raise Exception
 
         response_bytes = http_resp.read()
         AirDropUtil.write_debug(
@@ -191,7 +197,11 @@ class AirDropClient:
         ask_binary = plistlib.dumps(
             ask_body, fmt=plistlib.FMT_BINARY  # pylint: disable=no-member
         )
-        success, _ = self.send_POST("/Ask", ask_binary)
+        try:
+            success, _ = self.send_POST("/Ask", ask_binary)
+        # TODO: catch a non-generic exception
+        except Exception:
+            raise TimeoutError
 
         return success
 
@@ -267,7 +277,7 @@ class HTTPSConnectionAWDL(HTTPSConnection):
                     host = host + "%" + interface_name
 
         if timeout is None:
-            timeout = socket.getdefaulttimeout()
+            timeout = 2
 
         super(HTTPSConnectionAWDL, self).__init__(
             host=host,
