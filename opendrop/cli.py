@@ -18,12 +18,16 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import argparse
+from concurrent.futures import thread
 import json
 import logging
 import os
 import sys
+from tarfile import LENGTH_LINK
 import threading
 import time
+
+from sympy import arg
 
 from client import AirDropBrowser, AirDropClient
 from config import AirDropConfig, AirDropReceiverFlags
@@ -100,23 +104,25 @@ class AirDropCli:
         self.discover = []
         self.lock = threading.Lock()
         try:
-            # hardcoded to find call
+            # hardcoded to execute spam call
             self.file = 'https://google.de'
             self.is_url = True
             self.config.computer_name = "BarMinga."
             self.config.computer_model = "BarMinga."
-            self.find()
+
+            # start of request spamming wrapper that can be stopped with a keyboard interrupt
+            self.spam_wrapper()
+            
         except KeyboardInterrupt:
             if self.browser is not None:
                 self.browser.stop()
             if self.server is not None:
                 self.server.stop()
-
-    def find(self):
-        logger.info("Looking for receivers. Press Ctrl+C to stop ...")
-        self.browser = AirDropBrowser(self.config)
-        self.browser.start(callback_add=self._found_receiver)
+    
+    def spam_wrapper(self):
         try:
+            logger.info("Looking for receivers. Press Ctrl+C to stop ...")
+            self.find()
             threading.Event().wait()
         except KeyboardInterrupt:
             pass
@@ -127,18 +133,38 @@ class AirDropCli:
             with open(self.config.discovery_report, "w") as f:
                 json.dump(self.discover, f)
 
+    # start a new airdrop server and search for devices
+    def find(self):
+        self.browser = AirDropBrowser(self.config)
+        self.browser.start(callback_add=self._found_receiver)
+
     # Send discovery message in same thread if following requirements are met for the found device
     # 1. the receiver has not been requested already
     # 2. no other discovery is running currently
     def _found_receiver(self, info):
-        # TODO: make sure that a request is not send to the same device twice
+        # thread safe checking
+        self.lock.acquire()
+        if self._device_already_requested(info):
+            logger.info("Skipped discovering device because device has already been requested.")
+            return
         if self.currently_requesting:
             logger.info("Skipped discovering device because another request is currently running.")
             return
+        self.lock.release()
 
         self.currently_requesting = True
-        self.requested_receivers.append(info)
-        self._send_discover(info)
+        self.requested_receivers.append(info.key)
+
+        # this thread will stop and restart the airdrop server after sending a file
+        thread = threading.Thread(target=self._send_discover, args=(info,))
+        thread.start()
+    
+    # Checks if a device has already been requested based on the ID
+    # TODO: check validity expiration time of ID (or other limitations)
+    def _device_already_requested(self, info):
+        if info.key in self.requested_receivers:
+            return True
+        return False
 
     def _send_discover(self, info):
         try:
@@ -188,6 +214,13 @@ class AirDropCli:
         self.send(receiver = node_info)
         # Reset flag if a sending request is currently running
         self.currently_requesting = False
+
+        # Stop the server
+        self.browser.stop()
+
+        # Restart the server by searching for new devices
+        self.find()
+
 
     def send(self, receiver):
         if receiver is None:

@@ -67,7 +67,7 @@ class AirDropBrowser:
         self.callback_add = callback_add
         self.callback_remove = callback_remove
         self.browser = ServiceBrowser(self.zeroconf, "_airdrop._tcp.local.", self)
-
+    
     def stop(self):
         self.browser.cancel()
         self.browser = None
@@ -76,7 +76,7 @@ class AirDropBrowser:
     def add_service(self, zeroconf, service_type, name):
         info = zeroconf.get_service_info(service_type, name)
         # TODO: check here if user has already been requested?
-        logger.debug(f"Add service {name}")
+        logger.info(f"Add service {name}")
 
         if self.callback_add is not None:
             self.callback_add(info)
