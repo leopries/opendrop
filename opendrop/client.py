@@ -75,7 +75,9 @@ class AirDropBrowser:
 
     def add_service(self, zeroconf, service_type, name):
         info = zeroconf.get_service_info(service_type, name)
+        # TODO: check here if user has already been requested?
         logger.debug(f"Add service {name}")
+
         if self.callback_add is not None:
             self.callback_add(info)
 
@@ -84,6 +86,10 @@ class AirDropBrowser:
         logger.debug(f"Remove service {name}")
         if self.callback_remove is not None:
             self.callback_remove(info)
+    
+    # dummy method to prevent ignorable exceptions
+    def update_service(self, zerconf, service_type, name):
+        logger.debug(f"Updating service {name}")
 
 
 class AirDropClient:

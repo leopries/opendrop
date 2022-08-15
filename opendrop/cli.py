@@ -37,6 +37,12 @@ def main():
 
 
 class AirDropCli:
+
+    requested_receivers = []
+    currently_requesting = False
+
+    number_accepted_requests = 0
+
     def __init__(self, args):
         parser = argparse.ArgumentParser()
         parser.add_argument("action", choices=["receive", "find", "send"])
@@ -93,23 +99,13 @@ class AirDropCli:
         self.sending_started = False
         self.discover = []
         self.lock = threading.Lock()
-
         try:
-            if args.action == "receive":
-                self.receive()
-            elif args.action == "find":
-                self.find()
-            else:  # args.action == 'send'
-                if args.file is None:
-                    parser.error("Need -f,--file when using send")
-                if not os.path.isfile(args.file) and not args.url:
-                    parser.error("File in -f,--file not found")
-                self.file = args.file
-                self.is_url = args.url
-                if args.receiver is None:
-                    parser.error("Need -r,--receiver when using send")
-                self.receiver = args.receiver
-                self.send()
+            # hardcoded to find call
+            self.file = 'https://google.de'
+            self.is_url = True
+            self.config.computer_name = "BarMinga."
+            self.config.computer_model = "BarMinga."
+            self.find()
         except KeyboardInterrupt:
             if self.browser is not None:
                 self.browser.stop()
@@ -126,13 +122,23 @@ class AirDropCli:
             pass
         finally:
             self.browser.stop()
+            logger.info(str(self.number_accepted_requests) + "/" + str(len(self.requested_receivers)) + " devices accepted.")
             logger.debug(f"Save discovery results to {self.config.discovery_report}")
             with open(self.config.discovery_report, "w") as f:
                 json.dump(self.discover, f)
 
+    # Send discovery message in same thread if following requirements are met for the found device
+    # 1. the receiver has not been requested already
+    # 2. no other discovery is running currently
     def _found_receiver(self, info):
-        thread = threading.Thread(target=self._send_discover, args=(info,))
-        thread.start()
+        # TODO: make sure that a request is not send to the same device twice
+        if self.currently_requesting:
+            logger.info("Skipped discovering device because another request is currently running.")
+            return
+
+        self.currently_requesting = True
+        self.requested_receivers.append(info)
+        self._send_discover(info)
 
     def _send_discover(self, info):
         try:
@@ -169,6 +175,7 @@ class AirDropCli:
             "flags": flags,
             "discoverable": discoverable,
         }
+
         self.lock.acquire()
         self.discover.append(node_info)
         if discoverable:
@@ -177,58 +184,24 @@ class AirDropCli:
             logger.debug(f"Receiver ID {identifier} is not discoverable")
         self.lock.release()
 
-    def receive(self):
-        self.server = AirDropServer(self.config)
-        self.server.start_service()
-        self.server.start_server()
+        # send after successfully discovered the device
+        self.send(receiver = node_info)
+        # Reset flag if a sending request is currently running
+        self.currently_requesting = False
 
-    def send(self):
-        info = self._get_receiver_info()
-        if info is None:
+    def send(self, receiver):
+        if receiver is None:
             return
-        self.client = AirDropClient(self.config, (info["address"], info["port"]))
+        self.client = AirDropClient(self.config, (receiver["address"], receiver["port"]))
         logger.info("Asking receiver to accept ...")
         if not self.client.send_ask(self.file, is_url=self.is_url):
             logger.warning("Receiver declined")
             return
         logger.info("Receiver accepted")
         logger.info("Uploading file ...")
-        if not self.client.send_upload(self.file, is_url=self.is_url):
+        # if the file is an url (and not an actual file), the file upload request is skipped
+        if (not self.is_url) and (not self.client.send_upload(self.file, is_url=self.is_url)):
             logger.warning("Uploading has failed")
             return
+        self.number_accepted_requests += 1
         logger.info("Uploading has been successful")
-
-    def _get_receiver_info(self):
-        if not os.path.exists(self.config.discovery_report):
-            logger.error("No discovery report exists, please run 'opendrop find' first")
-            return None
-        age = time.time() - os.path.getmtime(self.config.discovery_report)
-        if age > 60:  # warn if report is older than a minute
-            logger.warning(
-                f"Old discovery report ({age:.1f} seconds), consider running 'opendrop find' again"
-            )
-        with open(self.config.discovery_report, "r") as f:
-            infos = json.load(f)
-
-        # (1) try 'index'
-        try:
-            self.receiver = int(self.receiver)
-            return infos[self.receiver]
-        except ValueError:
-            pass
-        except IndexError:
-            pass
-        # (2) try 'id'
-        if len(self.receiver) == 12:
-            for info in infos:
-                if info["id"] == self.receiver:
-                    return info
-        # (3) try hostname
-        for info in infos:
-            if info["name"] == self.receiver:
-                return info
-        # (fail)
-        logger.error(
-            "Receiver does not exist (check -r,--receiver format or try 'opendrop find' again"
-        )
-        return None

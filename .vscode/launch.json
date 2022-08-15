@@ -12,15 +12,6 @@
         "console": "integratedTerminal",
         "args": ["find"],
         "justMyCode": true
-      },
-      {
-          "name": "Send",
-          "type": "python",
-          "request": "launch",
-          "program": "${workspaceFolder}/opendrop/__main__.py",
-          "console": "integratedTerminal",
-          "args": ["send", "-f", ".gitignore", "-r", "iPhone von Ole"],
-          "justMyCode": true
       }
     ]
   }
