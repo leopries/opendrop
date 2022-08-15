@@ -67,7 +67,8 @@ class AirDropConfig:
     ):
         self.airdrop_dir = os.path.expanduser(airdrop_dir)
 
-        self.discovery_report = os.path.join(self.airdrop_dir, "discover.last.json")
+        # hardcoded to use for debugging
+        self.discovery_report = "./discover.last.json"
 
         if host_name is None:
             host_name = socket.gethostname()
