@@ -76,7 +76,7 @@ class AirDropBrowser:
     def add_service(self, zeroconf, service_type, name):
         info = zeroconf.get_service_info(service_type, name)
         # TODO: check here if user has already been requested?
-        logger.info(f"Add service {name}")
+        logger.debug(f"Add service {name}")
 
         if self.callback_add is not None:
             self.callback_add(info)

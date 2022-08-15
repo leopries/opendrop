@@ -135,6 +135,7 @@ class AirDropCli:
 
     # start a new airdrop server and search for devices
     def find(self):
+        logger.info("Restarted AirDrop server and searching for results...")
         self.browser = AirDropBrowser(self.config)
         self.browser.start(callback_add=self._found_receiver)
 
