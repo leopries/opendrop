@@ -25,9 +25,9 @@ import sys
 import threading
 import time
 
-from .client import AirDropBrowser, AirDropClient
-from .config import AirDropConfig, AirDropReceiverFlags
-from .server import AirDropServer
+from client import AirDropBrowser, AirDropClient
+from config import AirDropConfig, AirDropReceiverFlags
+from server import AirDropServer
 
 logger = logging.getLogger(__name__)
 

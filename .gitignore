@@ -101,7 +101,6 @@ venv.bak/
 .mypy_cache/
 
 ### VisualStudioCode ###
-.vscode/*
 .history
 
 ### IDEA ###
