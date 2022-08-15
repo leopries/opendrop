@@ -4,7 +4,7 @@
 In VSCode: Ausführen -> Start Debugging.
 
 Notizen: 
-- Imports müssen so angepasst werden, dass die projektinterne Version verwendet wird
+- Imports müssen so angepasst werden, dass die projektinterne Version verwendet wird. Das wurde schon erledigt, muss aber zurückgesetzt werden.
 - Falls Packages fehlen, diese aber (eigentlich) installiert sind, kann das daran liegen, dass ein falscher Python Interpreter verwendet wird. In diesem Fall *Cmd + Shift + P* -> *Select Python Interpreter* -> den jeweilig verwendeten Interpreter auswählen.
 - Sicherstellen, dass ./opendrop/certs/apple_root_ca.pem existiert. Andernfalls opendrop installieren mit *pip3 install ./opendrop* und danach wieder entfernen.
 
