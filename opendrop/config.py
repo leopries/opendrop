@@ -58,7 +58,7 @@ class AirDropConfig:
         computer_name=None,
         computer_model=None,
         server_port=8771,
-        airdrop_dir="~/.opendrop",
+        airdrop_dir="./",
         service_id=None,
         email=None,
         phone=None,
@@ -67,8 +67,7 @@ class AirDropConfig:
     ):
         self.airdrop_dir = os.path.expanduser(airdrop_dir)
 
-        # hardcoded to use for debugging
-        self.discovery_report = "./discover.last.json"
+        self.discovery_report = os.path.join(self.airdrop_dir, "discover.last.json")
 
         if host_name is None:
             host_name = socket.gethostname()
@@ -106,8 +105,7 @@ class AirDropConfig:
         )
 
         # Hardcoded path
-        self.root_ca_file = "./opendrop/certs/apple_root_ca.pem"
-        #resource_filename("opendrop", "certs/apple_root_ca.pem")
+        self.root_ca_file = os.path.join(airdrop_dir, "opendrop/certs/apple_root_ca.pem")
 
         if not os.path.exists(self.root_ca_file):
             raise FileNotFoundError(
