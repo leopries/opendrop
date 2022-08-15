@@ -122,10 +122,8 @@ class AirDropClient:
         self.http_conn.request("POST", url, body=body, headers=_headers)
         try:
             http_resp = self.http_conn.getresponse()
-        # TODO: catch a non-generic exception
-        except Exception:
-            logger.info("A request has timed out. Requests won't be send to the same device.")
-            raise Exception
+        except socket.timeout:
+            raise TimeoutError
 
         response_bytes = http_resp.read()
         AirDropUtil.write_debug(
@@ -199,8 +197,7 @@ class AirDropClient:
         )
         try:
             success, _ = self.send_POST("/Ask", ask_binary)
-        # TODO: catch a non-generic exception
-        except Exception:
+        except TimeoutError:
             raise TimeoutError
 
         return success

@@ -48,7 +48,7 @@ class AirDropCli:
 
     number_accepted_requests = 0
 
-    # duration until a request times out and new request to new devices will be send
+    # duration in seconds until a request times out and new request to new devices will be send
     timeout_duration = 7
 
     def __init__(self, args):
@@ -143,11 +143,10 @@ class AirDropCli:
         self.browser = AirDropBrowser(self.config)
         self.browser.start(callback_add=self._found_receiver)
 
-    # Send discovery message in same thread if following requirements are met for the found device
+    # Send discovery message in new thread if following requirements are met for the found device
     # 1. the receiver has not been requested already
     # 2. no other discovery is running currently
     def _found_receiver(self, info):
-        # thread safe checking
         if self._device_already_requested(info):
             logger.info("Skipped discovering device because device has already been requested.")
             return
@@ -233,9 +232,8 @@ class AirDropCli:
         # Ensure timeout
         try:
             ask_res = self.client.send_ask(self.file, is_url=self.is_url)
-        # TODO: catch a non-generic exception
-        except Exception:
-            logger.debug("Connection request timed out.")
+        except TimeoutError:
+            logger.info("Connection request timed out. No new requests will be send to this device.")
             return
         
         if not ask_res:
