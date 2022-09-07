@@ -49,7 +49,7 @@ class AirDropCli:
     number_accepted_requests = 0
 
     # duration in seconds until a request times out and new request to new devices will be send
-    timeout_duration = 2
+    timeout_duration = 4
 
     def __init__(self, args):
         parser = argparse.ArgumentParser()
