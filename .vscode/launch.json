@@ -10,7 +10,7 @@
         "request": "launch",
         "program": "${workspaceFolder}/opendrop/__main__.py",
         "console": "integratedTerminal",
-        "args": ["find"],
+        "args": ["find", "-f", "https://apps.apple.com/de/app/barminga/id1576867466"],
         "justMyCode": true
       }
     ]
