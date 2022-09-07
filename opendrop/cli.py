@@ -36,7 +36,6 @@ from server import AirDropServer
 
 logger = logging.getLogger(__name__)
 
-
 def main():
     AirDropCli(sys.argv[1:])
 
@@ -49,7 +48,7 @@ class AirDropCli:
     number_accepted_requests = 0
 
     # duration in seconds until a request times out and new request to new devices will be send
-    timeout_duration = 2
+    timeout_duration = 4
 
     def __init__(self, args):
         parser = argparse.ArgumentParser()
@@ -80,14 +79,6 @@ class AirDropCli:
         )
         args = parser.parse_args(args)
 
-        if args.debug:
-            logging.basicConfig(
-                level=logging.DEBUG,
-                format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-            )
-        else:
-            logging.basicConfig(level=logging.INFO, format="%(message)s")
-
         # TODO put emails and phone in canonical form (lower case, no '+' sign, etc.)
 
         self.config = AirDropConfig(
@@ -98,6 +89,16 @@ class AirDropCli:
             debug=args.debug,
             interface=args.interface,
         )
+
+        logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s %(levelname)s: %(message)s",
+                handlers=[
+                    logging.FileHandler(self.config.airdrop_dir + "/opendrop_output.log"),
+                    logging.StreamHandler()
+                ]
+            )
+
         self.server = None
         self.client = None
         self.browser = None
@@ -122,6 +123,7 @@ class AirDropCli:
     
     def spam_wrapper(self):
         try:
+            logger.info("-----------------BarMinga. AirDrop-----------------")
             logger.info("Looking for receivers. Press Ctrl+C to stop ...")
             self.find()
             threading.Event().wait()
