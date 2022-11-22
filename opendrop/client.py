@@ -30,7 +30,7 @@ import fleep
 import libarchive
 from zeroconf import IPVersion, ServiceBrowser, Zeroconf
 
-from .util import AbsArchiveWrite, AirDropUtil
+from util import AbsArchiveWrite, AirDropUtil
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ class AirDropBrowser:
         self.callback_add = callback_add
         self.callback_remove = callback_remove
         self.browser = ServiceBrowser(self.zeroconf, "_airdrop._tcp.local.", self)
-
+    
     def stop(self):
         self.browser.cancel()
         self.browser = None
@@ -76,6 +76,7 @@ class AirDropBrowser:
     def add_service(self, zeroconf, service_type, name):
         info = zeroconf.get_service_info(service_type, name)
         logger.debug(f"Add service {name}")
+
         if self.callback_add is not None:
             self.callback_add(info)
 
@@ -84,14 +85,19 @@ class AirDropBrowser:
         logger.debug(f"Remove service {name}")
         if self.callback_remove is not None:
             self.callback_remove(info)
+    
+    # dummy method to prevent ignorable exceptions
+    def update_service(self, zerconf, service_type, name):
+        logger.debug(f"Updating service {name}")
 
 
 class AirDropClient:
-    def __init__(self, config, receiver):
+    def __init__(self, config, receiver, timeout):
         self.config = config
         self.receiver_host = receiver[0]
         self.receiver_port = receiver[1]
         self.http_conn = None
+        self.timeout = timeout
 
     def send_POST(self, url, body, headers=None):
         logger.debug(f"Send {url} request")
@@ -111,9 +117,13 @@ class AirDropClient:
                 self.receiver_port,
                 interface_name=self.config.interface,
                 context=self.config.get_ssl_context(),
+                timeout=self.timeout
             )
         self.http_conn.request("POST", url, body=body, headers=_headers)
-        http_resp = self.http_conn.getresponse()
+        try:
+            http_resp = self.http_conn.getresponse()
+        except socket.timeout:
+            raise TimeoutError
 
         response_bytes = http_resp.read()
         AirDropUtil.write_debug(
@@ -185,7 +195,10 @@ class AirDropClient:
         ask_binary = plistlib.dumps(
             ask_body, fmt=plistlib.FMT_BINARY  # pylint: disable=no-member
         )
-        success, _ = self.send_POST("/Ask", ask_binary)
+        try:
+            success, _ = self.send_POST("/Ask", ask_binary)
+        except TimeoutError:
+            raise TimeoutError
 
         return success
 
@@ -261,7 +274,7 @@ class HTTPSConnectionAWDL(HTTPSConnection):
                     host = host + "%" + interface_name
 
         if timeout is None:
-            timeout = socket.getdefaulttimeout()
+            timeout = 2
 
         super(HTTPSConnectionAWDL, self).__init__(
             host=host,

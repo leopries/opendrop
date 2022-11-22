@@ -1,5 +1,14 @@
 # OpenDrop: an Open Source AirDrop Implementation
 
+## Debug locally (@ole-ve)
+In VSCode: Ausführen -> Start Debugging.
+
+Notizen: 
+- Imports müssen so angepasst werden, dass die projektinterne Version verwendet wird. Das wurde schon erledigt, muss aber zurückgesetzt werden.
+- Die zuletzt gefundenen Geräte werden standardmäßig in *~/opendrop/discover.last.json* gespeichert. Beim lokalen Debuggen wird auf diese Datei allerdings nicht zugegriffen. Daher wurde der Pfad hardcoded auf den Repository-Ordner verändert.
+- Falls Packages fehlen, diese aber (eigentlich) installiert sind, kann das daran liegen, dass ein falscher Python Interpreter verwendet wird. In diesem Fall *Cmd + Shift + P* -> *Select Python Interpreter* -> den jeweilig verwendeten Interpreter auswählen.
+- Sicherstellen, dass ./opendrop/certs/apple_root_ca.pem existiert. Andernfalls opendrop installieren mit *pip3 install ./opendrop* und danach wieder entfernen.
+
 [![Release](https://img.shields.io/pypi/v/opendrop?color=%23EC6500&label=release)](https://pypi.org/project/opendrop/)
 [![Language grade](https://img.shields.io/lgtm/grade/python/github/seemoo-lab/opendrop?label=code%20quality)](https://lgtm.com/projects/g/seemoo-lab/opendrop/context:python)
 

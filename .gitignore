@@ -101,8 +101,10 @@ venv.bak/
 .mypy_cache/
 
 ### VisualStudioCode ###
-.vscode/*
 .history
 
 ### IDEA ###
 .idea/
+*.DS_Store
+discover.last.json
+keys/
