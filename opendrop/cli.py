@@ -18,12 +18,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import argparse
+from concurrent.futures import thread
 import json
 import logging
+import multiprocessing
 import os
 import sys
+from tarfile import LENGTH_LINK
 import threading
 import time
+
+from sympy import arg
 
 from .client import AirDropBrowser, AirDropClient
 from .config import AirDropConfig, AirDropReceiverFlags
@@ -37,13 +42,19 @@ def main():
 
 
 class AirDropCli:
+
+    requested_receivers = []
+    currently_requesting = False
+
+    number_accepted_requests = 0
+
+    # duration in seconds until a request times out and new request to new devices will be send
+    timeout_duration = 4
+
     def __init__(self, args):
         parser = argparse.ArgumentParser()
         parser.add_argument("action", choices=["receive", "find", "send"])
-        parser.add_argument("-f", "--file", help="File to be sent")
-        parser.add_argument(
-            "-u", "--url", help="'-f,--file is a URL", action="store_true"
-        )
+        parser.add_argument("-f", "--file", help="The URL that will be sent to everyone nearby.")
         parser.add_argument(
             "-r",
             "--receiver",
@@ -69,14 +80,6 @@ class AirDropCli:
         )
         args = parser.parse_args(args)
 
-        if args.debug:
-            logging.basicConfig(
-                level=logging.DEBUG,
-                format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
-            )
-        else:
-            logging.basicConfig(level=logging.INFO, format="%(message)s")
-
         # TODO put emails and phone in canonical form (lower case, no '+' sign, etc.)
 
         self.config = AirDropConfig(
@@ -87,52 +90,82 @@ class AirDropCli:
             debug=args.debug,
             interface=args.interface,
         )
+
+        logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s %(levelname)s: %(message)s",
+                handlers=[
+                    logging.FileHandler(self.config.airdrop_dir + "/opendrop_output.log"),
+                    logging.StreamHandler()
+                ]
+            )
+
         self.server = None
         self.client = None
         self.browser = None
         self.sending_started = False
         self.discover = []
         self.lock = threading.Lock()
-
         try:
-            if args.action == "receive":
-                self.receive()
-            elif args.action == "find":
-                self.find()
-            else:  # args.action == 'send'
-                if args.file is None:
-                    parser.error("Need -f,--file when using send")
-                if not os.path.isfile(args.file) and not args.url:
-                    parser.error("File in -f,--file not found")
-                self.file = args.file
-                self.is_url = args.url
-                if args.receiver is None:
-                    parser.error("Need -r,--receiver when using send")
-                self.receiver = args.receiver
-                self.send()
+            # hardcoded to execute spam call
+            self.file = args.file
+            self.is_url = True
+            self.config.computer_name = "BarMinga."
+            self.config.computer_model = "BarMinga."
+
+            # start of request spamming wrapper that can be stopped with a keyboard interrupt
+            self.spam_wrapper()
+            
         except KeyboardInterrupt:
             if self.browser is not None:
                 self.browser.stop()
             if self.server is not None:
                 self.server.stop()
-
-    def find(self):
-        logger.info("Looking for receivers. Press Ctrl+C to stop ...")
-        self.browser = AirDropBrowser(self.config)
-        self.browser.start(callback_add=self._found_receiver)
+    
+    def spam_wrapper(self):
         try:
+            logger.info("-----------------BarMinga. AirDrop-----------------")
+            self.find()
             threading.Event().wait()
         except KeyboardInterrupt:
             pass
         finally:
             self.browser.stop()
+            logger.info(str(self.number_accepted_requests) + "/" + str(len(self.requested_receivers)) + " devices accepted.")
             logger.debug(f"Save discovery results to {self.config.discovery_report}")
             with open(self.config.discovery_report, "w") as f:
                 json.dump(self.discover, f)
 
+    # start a new airdrop server and search for devices
+    def find(self):
+        logger.info("(Re-)Started AirDrop server and searching for results...")
+        self.browser = AirDropBrowser(self.config)
+        self.browser.start(callback_add=self._found_receiver)
+
+    # Send discovery message in new thread if following requirements are met for the found device
+    # 1. the receiver has not been requested already
+    # 2. no other discovery is running currently
     def _found_receiver(self, info):
+        if self._device_already_requested(info):
+            logger.info("Skipped discovering device because device has already been requested.")
+            return
+        if self.currently_requesting:
+            logger.info("Skipped discovering device because another request is currently running.")
+            return
+
+        self.currently_requesting = True
+        self.requested_receivers.append(info.key)
+
+        # this thread will stop and restart the airdrop server after sending a file
         thread = threading.Thread(target=self._send_discover, args=(info,))
         thread.start()
+    
+    # Checks if a device has already been requested based on the ID
+    # TODO: check validity expiration time of ID (or other limitations)
+    def _device_already_requested(self, info):
+        if info.key in self.requested_receivers:
+            return True
+        return False
 
     def _send_discover(self, info):
         try:
@@ -144,7 +177,7 @@ class AirDropCli:
         hostname = info.server
         port = int(info.port)
         logger.debug(f"AirDrop service found: {hostname}, {address}:{port}, ID {id}")
-        client = AirDropClient(self.config, (address, int(port)))
+        client = AirDropClient(self.config, (address, int(port)), timeout=self.timeout_duration)
         try:
             flags = int(info.properties[b"flags"])
         except KeyError:
@@ -169,6 +202,7 @@ class AirDropCli:
             "flags": flags,
             "discoverable": discoverable,
         }
+
         self.lock.acquire()
         self.discover.append(node_info)
         if discoverable:
@@ -177,58 +211,38 @@ class AirDropCli:
             logger.debug(f"Receiver ID {identifier} is not discoverable")
         self.lock.release()
 
-    def receive(self):
-        self.server = AirDropServer(self.config)
-        self.server.start_service()
-        self.server.start_server()
+        # send after successfully discovered the device
+        self.send(receiver = node_info)
+        # Reset flag if a sending request is currently running
+        self.currently_requesting = False
 
-    def send(self):
-        info = self._get_receiver_info()
-        if info is None:
+        # Stop the server
+        self.browser.stop()
+
+        # Restart the server by searching for new devices
+        self.find()
+
+    def send(self, receiver):
+        if receiver is None:
             return
-        self.client = AirDropClient(self.config, (info["address"], info["port"]))
+        self.client = AirDropClient(self.config, (receiver["address"], receiver["port"]), timeout=self.timeout_duration)
         logger.info("Asking receiver to accept ...")
-        if not self.client.send_ask(self.file, is_url=self.is_url):
+
+        # Ensure timeout
+        try:
+            ask_res = self.client.send_ask(self.file, is_url=self.is_url)
+        except TimeoutError:
+            logger.info("Connection request timed out. No new requests will be send to this device.")
+            return
+        
+        if not ask_res:
             logger.warning("Receiver declined")
             return
         logger.info("Receiver accepted")
         logger.info("Uploading file ...")
-        if not self.client.send_upload(self.file, is_url=self.is_url):
+        # if the file is an url (and not an actual file), the file upload request is skipped
+        if (not self.is_url) and (not self.client.send_upload(self.file, is_url=self.is_url)):
             logger.warning("Uploading has failed")
             return
+        self.number_accepted_requests += 1
         logger.info("Uploading has been successful")
-
-    def _get_receiver_info(self):
-        if not os.path.exists(self.config.discovery_report):
-            logger.error("No discovery report exists, please run 'opendrop find' first")
-            return None
-        age = time.time() - os.path.getmtime(self.config.discovery_report)
-        if age > 60:  # warn if report is older than a minute
-            logger.warning(
-                f"Old discovery report ({age:.1f} seconds), consider running 'opendrop find' again"
-            )
-        with open(self.config.discovery_report, "r") as f:
-            infos = json.load(f)
-
-        # (1) try 'index'
-        try:
-            self.receiver = int(self.receiver)
-            return infos[self.receiver]
-        except ValueError:
-            pass
-        except IndexError:
-            pass
-        # (2) try 'id'
-        if len(self.receiver) == 12:
-            for info in infos:
-                if info["id"] == self.receiver:
-                    return info
-        # (3) try hostname
-        for info in infos:
-            if info["name"] == self.receiver:
-                return info
-        # (fail)
-        logger.error(
-            "Receiver does not exist (check -r,--receiver format or try 'opendrop find' again"
-        )
-        return None
